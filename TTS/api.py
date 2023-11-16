@@ -17,7 +17,7 @@ class TTS(nn.Module):
 
     def __init__(
         self,
-        model_name: str = None,
+        model_name: str = "",
         model_path: str = None,
         config_path: str = None,
         vocoder_path: str = None,
@@ -60,7 +60,7 @@ class TTS(nn.Module):
             vocoder_config_path (str, optional): Path to the vocoder config. Defaults to None.
             progress_bar (bool, optional): Whether to pring a progress bar while downloading a model. Defaults to True.
             cs_api_model (str, optional): Name of the model to use for the Coqui Studio API. Available models are
-                "XTTS", "XTTS-multilingual", "V1". You can also use `TTS.cs_api.CS_API" for more control.
+                "XTTS", "V1". You can also use `TTS.cs_api.CS_API" for more control.
                 Defaults to "XTTS".
             gpu (bool, optional): Enable/disable GPU. Some models might be too slow on CPU. Defaults to False.
         """
@@ -71,7 +71,7 @@ class TTS(nn.Module):
         self.voice_converter = None
         self.csapi = None
         self.cs_api_model = cs_api_model
-        self.model_name = None
+        self.model_name = ""
 
         if gpu:
             warnings.warn("`gpu` will be deprecated. Please use `tts.to(device)` instead.")
@@ -105,6 +105,9 @@ class TTS(nn.Module):
 
     @property
     def is_multi_lingual(self):
+        # Not sure what sets this to None, but applied a fix to prevent crashing.
+        if isinstance(self.model_name, str) and "xtts" in self.model_name:
+            return True
         if hasattr(self.synthesizer.tts_model, "language_manager") and self.synthesizer.tts_model.language_manager:
             return self.synthesizer.tts_model.language_manager.num_languages > 1
         return False
@@ -261,6 +264,7 @@ class TTS(nn.Module):
         language: str = None,
         emotion: str = None,
         speed: float = 1.0,
+        pipe_out=None,
         file_path: str = None,
     ) -> Union[np.ndarray, str]:
         """Convert text to speech using Coqui Studio models. Use `CS_API` class if you are only interested in the API.
@@ -271,12 +275,14 @@ class TTS(nn.Module):
             speaker_name (str, optional):
                 Speaker name from Coqui Studio. Defaults to None.
             language (str): Language of the text. If None, the default language of the speaker is used. Language is only
-                supported by `XTTS-multilang` model. Currently supports en, de, es, fr, it, pt, pl. Defaults to "en".
+                supported by `XTTS` model.
             emotion (str, optional):
                 Emotion of the speaker. One of "Neutral", "Happy", "Sad", "Angry", "Dull". Emotions are only available
                 with "V1" model. Defaults to None.
             speed (float, optional):
                 Speed of the speech. Defaults to 1.0.
+            pipe_out (BytesIO, optional):
+                Flag to stdout the generated TTS wav file for shell pipe.
             file_path (str, optional):
                 Path to save the output file. When None it returns the `np.ndarray` of waveform. Defaults to None.
 
@@ -290,6 +296,7 @@ class TTS(nn.Module):
                 speaker_name=speaker_name,
                 language=language,
                 speed=speed,
+                pipe_out=pipe_out,
                 emotion=emotion,
                 file_path=file_path,
             )[0]
@@ -314,7 +321,7 @@ class TTS(nn.Module):
                 Speaker name for multi-speaker. You can check whether loaded model is multi-speaker by
                 `tts.is_multi_speaker` and list speakers by `tts.speakers`. Defaults to None.
             language (str): Language of the text. If None, the default language of the speaker is used. Language is only
-                supported by `XTTS-multilang` model. Currently supports en, de, es, fr, it, pt, pl. Defaults to "en".
+                supported by `XTTS` model.
             speaker_wav (str, optional):
                 Path to a reference wav file to use for voice cloning with supporting models like YourTTS.
                 Defaults to None.
@@ -352,6 +359,7 @@ class TTS(nn.Module):
         speaker_wav: str = None,
         emotion: str = None,
         speed: float = 1.0,
+        pipe_out=None,
         file_path: str = "output.wav",
         **kwargs,
     ):
@@ -373,6 +381,8 @@ class TTS(nn.Module):
                 Emotion to use for 🐸Coqui Studio models. Defaults to "Neutral".
             speed (float, optional):
                 Speed factor to use for 🐸Coqui Studio models, between 0.0 and 2.0. Defaults to None.
+            pipe_out (BytesIO, optional):
+                Flag to stdout the generated TTS wav file for shell pipe.
             file_path (str, optional):
                 Output file path. Defaults to "output.wav".
             kwargs (dict, optional):
@@ -382,10 +392,16 @@ class TTS(nn.Module):
 
         if self.csapi is not None:
             return self.tts_coqui_studio(
-                text=text, speaker_name=speaker, language=language, emotion=emotion, speed=speed, file_path=file_path
+                text=text,
+                speaker_name=speaker,
+                language=language,
+                emotion=emotion,
+                speed=speed,
+                file_path=file_path,
+                pipe_out=pipe_out,
             )
         wav = self.tts(text=text, speaker=speaker, language=language, speaker_wav=speaker_wav, **kwargs)
-        self.synthesizer.save_wav(wav=wav, path=file_path)
+        self.synthesizer.save_wav(wav=wav, path=file_path, pipe_out=pipe_out)
         return file_path
 
     def voice_conversion(
@@ -444,7 +460,7 @@ class TTS(nn.Module):
         """
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as fp:
             # Lazy code... save it to a temp file to resample it while reading it for VC
-            self.tts_to_file(text=text, speaker=None, language=language, file_path=fp.name)
+            self.tts_to_file(text=text, speaker=None, language=language, file_path=fp.name, speaker_wav=speaker_wav)
         if self.voice_converter is None:
             self.load_vc_model_by_name("voice_conversion_models/multilingual/vctk/freevc24")
         wav = self.voice_converter.voice_conversion(source_wav=fp.name, target_wav=speaker_wav)
