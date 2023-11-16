@@ -1102,7 +1102,7 @@ class TextNorm:
 
         text = normalize_nsw(text)
 
-        text = text.translate(PUNCS_TRANSFORM)
+        # text = text.translate(PUNCS_TRANSFORM)
 
         if self.check_chars:
             for c in text:
