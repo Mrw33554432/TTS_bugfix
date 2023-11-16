@@ -514,7 +514,7 @@ def basic_cleaners(text):
 
 
 def chinese_transliterate(text):
-    return "".join(
+    return " ".join(
         [p[0] for p in pypinyin.pinyin(text, style=pypinyin.Style.TONE3, heteronym=False, neutral_tone_with_five=True)]
     )
 
